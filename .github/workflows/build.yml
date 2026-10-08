@@ -18,20 +18,17 @@ jobs:
       # The project targets SDK 10.0.15063 (the newest one that exists on a
       # Windows 10 Mobile 1703/1709 device) and builds ARM with .NET Native, so
       # the runner needs that SDK and the ARM C++ tools added to Visual Studio.
-      - name: Install Windows SDK 15063 and ARM tools
+      - name: Install Windows SDK 15063
         shell: pwsh
         run: |
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
-          Write-Host "VS at $vsPath"
-          $args = @('modify','--installPath',$vsPath,'--quiet','--norestart','--noUpdateInstaller',
-            '--add','Microsoft.VisualStudio.Component.Windows10SDK.15063.UWP',
-            '--add','Microsoft.VisualStudio.Component.Windows10SDK.15063.UWP.Native',
-            '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM',
-            '--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64')
-          $p = Start-Process -FilePath "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" -ArgumentList $args -Wait -PassThru
-          Write-Host "::notice::installer exit code: $($p.ExitCode)"
+          $ok = Test-Path "${env:ProgramFiles(x86)}\Windows Kits\10\Platforms\UAP\10.0.15063.0"
+          if (-not $ok) {
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?linkid=845298' -OutFile sdk15063.exe
+            Write-Host "::notice::sdk downloaded: $((Get-Item sdk15063.exe).Length) bytes"
+            $p = Start-Process -FilePath .\sdk15063.exe -ArgumentList '/quiet','/norestart','/features','+' -Wait -PassThru
+            Write-Host "::notice::sdk installer exit code: $($p.ExitCode)"
+          }
           Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Platforms\UAP" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "::notice::UAP platform: $($_.Name)" }
-          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "::notice::SDK include: $($_.Name)" }
 
       - name: Create Secrets.cs
         shell: pwsh
