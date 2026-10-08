@@ -1,0 +1,70 @@
+name: Build Unogram (ARM appx)
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      # The project targets SDK 10.0.15063 (the newest one that exists on a
+      # Windows 10 Mobile 1703/1709 device) and builds ARM with .NET Native, so
+      # the runner needs that SDK and the ARM C++ tools added to Visual Studio.
+      - name: Install Windows SDK 15063 and ARM tools
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          Write-Host "VS at $vsPath"
+          $args = @('modify','--installPath',$vsPath,'--quiet','--norestart','--noUpdateInstaller',
+            '--add','Microsoft.VisualStudio.Component.Windows10SDK.15063.UWP',
+            '--add','Microsoft.VisualStudio.Component.Windows10SDK.15063.UWP.Native',
+            '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM',
+            '--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64')
+          $p = Start-Process -FilePath "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" -ArgumentList $args -Wait -PassThru
+          Write-Host "installer exit code: $($p.ExitCode)"
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Platforms\UAP" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "UAP platform: $($_.Name)" }
+
+      - name: Create Secrets.cs
+        shell: pwsh
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          $id = $env:TG_API_ID
+          $hash = $env:TG_API_HASH
+          if ([string]::IsNullOrWhiteSpace($id) -or [string]::IsNullOrWhiteSpace($hash)) {
+            Write-Host "::warning::TG_API_ID / TG_API_HASH secrets are not set - building with placeholders (app will compile but cannot log in)"
+            $id = '0'; $hash = ''
+          }
+          $src = Get-Content Secrets.cs.template -Raw
+          $src = $src -replace 'ApiId = 0;', "ApiId = $id;"
+          $src = $src -replace 'ApiHash = "";', "ApiHash = `"$hash`";"
+          Set-Content -Path Secrets.cs -Value $src -Encoding UTF8
+
+      - name: NuGet restore
+        run: nuget restore Unogram.sln
+
+      - name: Build (Release | ARM)
+        run: msbuild Unogram.sln /p:Configuration=Release /p:Platform=ARM /p:AppxBundle=Never /v:m /m
+
+      - name: Collect packages
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Get-ChildItem -Recurse -Include *.appx,*.cer -Path TelegramWP10 | Where-Object { $_.FullName -match 'AppPackages' } | ForEach-Object { Copy-Item $_.FullName out/ ; Write-Host $_.FullName }
+          Get-ChildItem -Recurse -Path TelegramWP10 -Filter 'Microsoft.VCLibs*.appx' | ForEach-Object { Copy-Item $_.FullName out/ -ErrorAction SilentlyContinue }
+          Get-ChildItem out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Unogram-ARM-appx
+          path: out/*
+          if-no-files-found: warn
