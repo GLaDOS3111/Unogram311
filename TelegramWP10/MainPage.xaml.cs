@@ -1717,6 +1717,19 @@ namespace TelegramWP10
 
                 case "chat":
                     long openChatId = update["id"]?.ToObject<long>() ?? 0;
+                    // Ответ на getChat из LoadNextChat. Раньше цепочка продолжалась ТОЛЬКО
+                    // через updateNewChat, а TDLib шлёт его лишь один раз, при первом
+                    // появлении чата, — если чат уже "известен", цепочка вставала насовсем.
+                    if (openChatId != 0 && _pendingGetChat.Remove(openChatId)) {
+                        if (!_chatsDict.ContainsKey(openChatId)) {
+                            var wrappedNewChat = new JObject {
+                                ["@type"] = "updateNewChat",
+                                ["chat"] = update.DeepClone()
+                            };
+                            HandleUpdate("updateNewChat", wrappedNewChat);
+                        }
+                        LoadNextChat();
+                    }
                     // Ответ на восстановление удалённого чата — отдаём его
                     // штатному обработчику, чтобы не дублировать логику вставки.
                     // Восстанавливаем в список ТОЛЬКО если чат реально состоит
@@ -1953,6 +1966,7 @@ namespace TelegramWP10
                             _pendingChatIds.Clear();
                             foreach (var cId in chatIds)
                                 _pendingChatIds.Enqueue((long)cId);
+                            BackgroundService.Diag("getChats returned " + chatIds.Count + " ids (loadingChats=" + _loadingChats + ", archive=" + _loadingArchive + ")");
                             if (chatIds.Count == 0 && _loadingArchive) {
                                 _loadingArchive = false;
                                 ArchiveChatCountText.Text = Loc.T("archive_empty");
@@ -2335,8 +2349,11 @@ namespace TelegramWP10
                 return;
             }
             long nextId = _pendingChatIds.Dequeue();
-            Task.Delay(100).ContinueWith(_ =>
-                Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () => {
+            // Раньше тут стояла пауза Task.Delay(100) на КАЖДЫЙ чат (300 чатов = 30+ секунд
+            // впустую). Очередь по-прежнему обрабатывается по одному, но без искусственной
+            // задержки: приоритет Low сам отдаёт UI-потоку время на отрисовку.
+            var _lcTask =
+                Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => {
                     if (_chatsDict.ContainsKey(nextId)) {
                         var existing = _chatsDict[nextId];
                         // Определяем список по флагу загрузки
@@ -2368,13 +2385,25 @@ namespace TelegramWP10
                             }
                         }
                     } else {
-                        // Чат ещё не известен — запрашиваем, updateNewChat вызовет LoadNextChat сам
+                        // Чат ещё не известен — запрашиваем, updateNewChat (или ответ "chat")
+                        // продолжит цепочку. Если ответ не придёт (ошибка, обрыв связи) —
+                        // через 4 секунды этот чат пропускается, иначе вся загрузка списка
+                        // вставала бы навсегда на одном чате.
                         _pendingGetChat.Add(nextId);
                         TdJson.SendUtf8(_client, "{\"@type\":\"getChat\",\"chat_id\":" + nextId + "}");
+                        BackgroundService.Diag("LoadNextChat: getChat " + nextId + " requested, left=" + _pendingChatIds.Count);
+                        long waitId = nextId;
+                        var _wd = Task.Delay(4000).ContinueWith(_ =>
+                            Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () => {
+                                if (_pendingGetChat.Remove(waitId)) {
+                                    BackgroundService.Diag("LoadNextChat: getChat " + waitId + " TIMEOUT, skipping");
+                                    LoadNextChat();
+                                }
+                            }));
                         return; // не вызываем LoadNextChat здесь — иначе двойной поток
                     }
                     LoadNextChat();
-                }));
+                });
         }
 
         // Вставляет разделители дат в _messageItems (полная перестройка)
