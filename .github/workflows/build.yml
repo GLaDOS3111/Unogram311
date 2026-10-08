@@ -29,8 +29,9 @@ jobs:
             '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM',
             '--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64')
           $p = Start-Process -FilePath "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" -ArgumentList $args -Wait -PassThru
-          Write-Host "installer exit code: $($p.ExitCode)"
-          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Platforms\UAP" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "UAP platform: $($_.Name)" }
+          Write-Host "::notice::installer exit code: $($p.ExitCode)"
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Platforms\UAP" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "::notice::UAP platform: $($_.Name)" }
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "::notice::SDK include: $($_.Name)" }
 
       - name: Create Secrets.cs
         shell: pwsh
