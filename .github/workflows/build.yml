@@ -53,7 +53,7 @@ jobs:
       - name: Build (Release | ARM)
         shell: pwsh
         run: |
-          msbuild Unogram.sln /p:Configuration=Release /p:Platform=ARM /p:AppxBundle=Never /v:m /m "/flp:logfile=build.log;verbosity=normal" "/flp1:logfile=errors.log;errorsonly;verbosity=quiet"
+          msbuild Unogram.sln /p:Configuration=Release /p:Platform=ARM /p:AppxBundle=Never /p:PackageCertificateThumbprint= /v:m /m "/flp:logfile=build.log;verbosity=normal" "/flp1:logfile=errors.log;errorsonly;verbosity=quiet"
           $code = $LASTEXITCODE
           if (Test-Path errors.log) {
             Get-Content errors.log | Select-Object -Unique | Select-Object -First 15 | ForEach-Object {
