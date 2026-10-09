@@ -567,6 +567,7 @@ namespace TelegramWP10
             switch (type) {
                 case "updateAuthorizationState":
                     var s = update["authorization_state"]?["@type"]?.ToString();
+                    BackgroundService.Diag("AUTH STATE: " + s + (s == "authorizationStateClosed" || s == "authorizationStateLoggingOut" ? " (tdClosing=" + _tdClosing + ")" : ""));
                     if (s == "authorizationStateWaitTdlibParameters") {
                         SendParameters();
                         TdJson.SendUtf8(_client, "{\"@type\":\"getOption\",\"name\":\"version\"}");
@@ -624,6 +625,8 @@ namespace TelegramWP10
                         _folderChatIds.Clear();
                         _mainListLoaded = false;
                         ChatListView.Visibility = Visibility.Collapsed;
+                        if (SearchPanel != null) SearchPanel.Visibility = Visibility.Collapsed;
+                        if (FolderTabsScroll != null) FolderTabsScroll.Visibility = Visibility.Collapsed;
                         LoginPanel.Visibility = Visibility.Visible;
                         ProxyBottomRow.Visibility = Visibility.Visible;
                         LoginStatus.Text = Loc.T("login_enterPhone");
